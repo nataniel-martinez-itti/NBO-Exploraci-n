@@ -324,9 +324,196 @@ Basándome en impacto potencial y facilidad de implementación:
 | 4 | **Share of Wallet TC** | 🔥🔥 | Media | Requiere desglose por producto |
 | 5 | **Variación % Deuda** | 🔥🔥 | Media | Requiere historia mensual |
 | 6 | **Delta Días Atraso** | 🔥🔥 | Media | Requiere historia mensual |
-| 7 | **Liquidez Neta** | 🔥🔥 | Fácil | `Depósitos - Deuda` |
-| 8 | **Flag Peor Momento** | 🔥🔥 | Media | Comparar actual vs histórico |
-| 9 | **Contingencia** | 🔥🔥 | Fácil | Ya está en tablas CRC |
-| 10 | **RSI Morosidad** | 🔥 | Difícil | Cálculo complejo |
+
+
+# Detalle de Variables CRC Incorporadas
+
+
+## Resumen Ejecutivo
+
+| Métrica | Valor |
+|---------|-------|
+| Variables CRC anteriores | 14 |
+| Variables CRC nuevas activas | 19 |
+| Variables comentadas (requieren UNNEST) | 6 |
+| **Total variables CRC activas** | **33** |
+
+---
+
+## Estado de Variables
+
+### ✅ Variables Activas
+
+| # | Variable | Bloque | Descripción | Prioridad |
+|---|----------|--------|-------------|-----------|
+| 1 | `crc_deuda_tc` | 0 | Deuda en tarjetas de crédito | Media |
+| 2 | `crc_deuda_prestamos` | 0 | Deuda en préstamos amortizables | Media |
+| 3 | `crc_exposicion_total` | 0 | Deuda total + montocontingencia | Alta |
+| 4 | `crc_contingencia_total` | 0 | Suma de montocontingencia | Alta |
+| 5 | `crc_ratio_toxicidad` | 1 | (deuda_incobrable + vendida) / total | Alta |
+| 6 | `crc_share_wallet_tc` | 2 | deuda_tc / deuda_total | Media |
+| 7 | `crc_share_wallet_prestamos` | 2 | deuda_prestamos / deuda_total | Media |
+| 8 | `crc_share_wallet_sobregiro` | 2 | deuda_sobregiro / deuda_total | Baja |
+| 9 | `crc_flag_tiene_tc` | 2 | 1 si tiene TC activa | Media |
+| 10 | `crc_flag_tiene_prestamo` | 2 | 1 si tiene préstamo activo | Media |
+| 11 | `crc_flag_tiene_sobregiro` | 2 | 1 si tiene sobregiro activo | Baja |
+| 12 | `crc_indice_diversidad` | 2 | Diversificación de productos | Media |
+| 13 | `crc_ratio_saturacion` | 6 | deuda_total / exposicion_total | 🔴 **TOP 1** |
+| 14 | `crc_ratio_deuda_depositos` | Cross | deuda_total / depositos | 🔴 **TOP 3** |
+| 15 | `crc_liquidez_neta` | Cross | depositos - deuda_total | 🔴 **TOP 7** |
+| 16 | `crc_flag_deuda_mayor_depositos` | Cross | 1 si deuda > depositos | Media |
+| 17 | `crc_plcr` | Cross | (depositos + contingencia) / deuda | Media |
+| 18 | `crc_avg_deuda_3M` | Temporal | Promedio deuda últimos 3 meses | Media |
+| 19 | `crc_avg_deuda_6M` | Temporal | Promedio deuda últimos 6 meses | Media |
+| 20 | `crc_stddev_deuda_3M` | Temporal | Volatilidad deuda 3 meses | Alta |
+| 21 | `crc_stddev_deuda_6M` | Temporal | Volatilidad deuda 6 meses | Alta |
+
+### ❌ Variables Comentadas (Requieren procesamiento adicional)
+
+| Variable | Razón | Campo problemático |
+|----------|-------|-------------------|
+| `crc_deuda_interna_ueno` | `codentidad` está en array JSON `detalles` | codentidad |
+| `crc_deuda_externa` | `codentidad` está en array JSON `detalles` | codentidad |
+| `crc_cnt_entidades` | `codentidad` está en array JSON `detalles` | codentidad |
+| `crc_share_wallet_ueno` | Depende de `crc_deuda_interna_ueno` | codentidad |
+| `crc_ratio_uso_tc` | Requiere contingencia por tipo producto | contingencia por tipo |
+| `crc_ratio_uso_prestamos` | Requiere contingencia por tipo producto | contingencia por tipo |
+
+### ⚠️ Variables con valor fijo (campo no existe en tabla temporal)
+
+| Variable | Valor | Razón |
+|----------|-------|-------|
+| `crc_max_atraso_3M` | 0 | `diasatraso` no existe en `gv_bcp_crc_deuda_mensual_por_persona` |
+| `crc_max_atraso_6M` | 0 | `diasatraso` no existe en `gv_bcp_crc_deuda_mensual_por_persona` |
+
+**Nota:** El atraso ya se captura en `crc_max_dias_atraso` desde `consolidado_por_persona`.
+
+---
+
+## BLOQUE 0: Magnitud y Volumen
+
+### Variables Existentes (ya teníamos)
+
+| Variable | Tipo | Descripción |
+|----------|------|-------------|
+| `crc_deuda_total` | DOUBLE | Suma total de deuda (activa + vendida + incobrable) |
+| `crc_deuda_activa_total` | DOUBLE | Deuda vigente en el sistema |
+| `crc_deuda_vendida_total` | DOUBLE | Deuda que fue vendida/castigada |
+| `crc_deuda_incobrable_total` | DOUBLE | Deuda clasificada como incobrable |
+| `crc_cnt_operaciones` | INTEGER | Cantidad de operaciones crediticias |
+
+### Variables Nuevas Activas
+
+| Variable | Tipo | Fórmula/Descripción |
+|----------|------|---------------------|
+| `crc_deuda_tc` | DOUBLE | `SUM(deudaactiva) WHERE tipooperacion LIKE '%TARJETA%'` |
+| `crc_deuda_prestamos` | DOUBLE | `SUM(deudaactiva) WHERE tipooperacion LIKE '%PRESTAMO%'` |
+| `crc_exposicion_total` | DOUBLE | `deuda_total + montocontingencia` |
+| `crc_contingencia_total` | DOUBLE | `SUM(montocontingencia)` |
+
+---
+
+## BLOQUE 1: Morosidad y Calidad de Cartera
+
+### Variables Existentes (ya teníamos)
+
+| Variable | Tipo | Descripción |
+|----------|------|-------------|
+| `crc_max_dias_atraso` | INTEGER | Máximo días de atraso registrado |
+| `crc_flag_deuda_vendida` | INTEGER (0/1) | Tiene deuda vendida |
+| `crc_flag_deuda_incobrable` | INTEGER (0/1) | Tiene deuda incobrable |
+| `crc_flag_dias_atraso` | INTEGER (0/1) | Tiene algún día de atraso |
+| `crc_flag_atraso_30d/60d/90d` | INTEGER (0/1) | Flags de atraso por tramo |
+
+### Variables Nuevas Activas
+
+| Variable | Tipo | Fórmula |
+|----------|------|---------|
+| `crc_ratio_toxicidad` | DOUBLE | `(deuda_incobrable + deuda_vendida) / deuda_total` |
+
+**Interpretación:**
+- `0.0`: Sin deuda tóxica
+- `0.01 - 0.10`: Toxicidad baja
+- `0.10 - 0.30`: Toxicidad moderada - alerta
+- `> 0.30`: Toxicidad alta - historial comprometido
+
+---
+
+## BLOQUE 2: Estructura y Share of Wallet
+
+### Variables Nuevas Activas
+
+| Variable | Tipo | Fórmula |
+|----------|------|---------|
+| `crc_share_wallet_tc` | DOUBLE | `deuda_tc / deuda_total` |
+| `crc_share_wallet_prestamos` | DOUBLE | `deuda_prestamos / deuda_total` |
+| `crc_share_wallet_sobregiro` | DOUBLE | `deuda_sobregiro / deuda_total` |
+| `crc_flag_tiene_tc` | INTEGER | `1 si deuda_tc > 0` |
+| `crc_flag_tiene_prestamo` | INTEGER | `1 si deuda_prestamos > 0` |
+| `crc_flag_tiene_sobregiro` | INTEGER | `1 si deuda_sobregiro > 0` |
+| `crc_indice_diversidad` | DOUBLE | Basado en cantidad de tipos de producto (0-1) |
+
+---
+
+## BLOQUE 6: Ratios de Saturación 🔴
+
+### Variable TOP 1 Activa
+
+| Variable | Tipo | Fórmula | Prioridad |
+|----------|------|---------|-----------|
+| `crc_ratio_saturacion` | DOUBLE | `deuda_total / exposicion_total` | 🔴 **TOP 1** |
+
+**Interpretación:**
+
+| Valor | Nivel | Interpretación |
+|-------|-------|----------------|
+| 0.0 - 0.3 | 🟢 Bajo | Mucho margen disponible |
+| 0.3 - 0.6 | 🟡 Moderado | Uso normal |
+| 0.6 - 0.8 | 🟠 Alto | Poco margen |
+| 0.8 - 0.95 | 🔴 Muy Alto | Casi saturado |
+| > 0.95 | ⚫ Crítico | Sin margen - predictor de default |
+
+---
+
+## Variables CROSS (Deuda vs Depósitos)
+
+### Variables Activas
+
+| Variable | Tipo | Fórmula | Prioridad |
+|----------|------|---------|-----------|
+| `crc_ratio_deuda_depositos` | DOUBLE | `deuda_total / depositos` | 🔴 **TOP 3** |
+| `crc_liquidez_neta` | DOUBLE | `depositos - deuda_total` | 🔴 **TOP 7** |
+| `crc_flag_deuda_mayor_depositos` | INTEGER | `1 si deuda > depositos` | Media |
+| `crc_plcr` | DOUBLE | `(depositos + contingencia) / deuda` | Media |
+
+---
+
+## Variables Temporales (Estadísticas de Ventana)
+
+### Variables Existentes (ya teníamos)
+
+| Variable | Descripción |
+|----------|-------------|
+| `crc_deuda_1M/3M/6M/12M` | Suma de deuda en ventanas temporales |
+| `crc_total_riesgo_3M/6M` | Exposición total en ventanas |
+| `crc_peor_clasif_3M/6M` | Peor clasificación regulatoria |
+| `crc_cnt_meses_deuda_3M/6M` | Meses con deuda activa |
+
+### Variables Nuevas Activas
+
+| Variable | Tipo | Descripción |
+|----------|------|-------------|
+| `crc_avg_deuda_3M` | DOUBLE | Promedio deuda últimos 3 meses |
+| `crc_avg_deuda_6M` | DOUBLE | Promedio deuda últimos 6 meses |
+| `crc_stddev_deuda_3M` | DOUBLE | Desviación estándar deuda 3 meses |
+| `crc_stddev_deuda_6M` | DOUBLE | Desviación estándar deuda 6 meses |
+
+**Interpretación de Volatilidad:**
+- Baja stddev: Comportamiento estable y predecible
+- Alta stddev: Comportamiento errático - mayor riesgo
+
+---
+
+
 
 
